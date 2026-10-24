@@ -50,7 +50,7 @@ LIST2 = OrderedDict([
             ("شي براند",           ["شي براند"],  F(6000, 6000, 5000)),
             ("أزياء برو",          ["ازياء برو"], F(7000, 7000, 5000)),
             ("أزياء كاريزا",       ["كاريزا"],    F(7000, 7000, 5000)),
-            ("زيزفونة",            ["زيزفونة"],   F(6000, 6000, 5000)),
+            ("زيزفونه",            ["زيزفونه"],   F(6000, 6000, 5000)),
             ("توتة",               ["توته"],      F(7000, 7000, 5000)),
             ("حذيفة براند",        ["حذيفه"],     F(6000, 6000, 5000)),
             ("Velure lingeri",     ["velure", "valure"], F(6000, 6000, 5000)),
@@ -69,7 +69,7 @@ LIST2 = OrderedDict([
             ("مكتبة الميثاق", ["الميثاق"],   F(3000, 3000, 3000)),
             ("طوق الحمامة", ["طوق الحمامة"], F(6000, 6000, 5000)),
             ("الحرمين", ["الحرمين"], F(6000, 6000, 5000)),
-            ("ابن الاثير", ["ابن الاثير"], F(6000, 6000, 5000)),
+            ("ابن الأثير", ["ابن الأثير"], F(6000, 6000, 5000)),
             ("الكبيسي", ["الكبيسي"], F(6000, 6000, 5000)),
             ("عبد الرحمن", ["عبد الرحمن"], F(6000, 6000, 5000)),
             ("كنوز", ["كنوز"], F(6000, 6000, 5000)),
@@ -246,8 +246,11 @@ def describe_fees(fees):
 
 
 def _words(text):
-    """الاسم بعد التطبيع وحذف الرموز، محاط بمسافات حتى نقارن بالكلمة الكاملة."""
-    return " " + re.sub(r"[\W_]+", " ", norm(text)).strip() + " "
+    """الاسم بعد التطبيع وحذف الرموز، محاط بمسافات حتى نقارن بالكلمة الكاملة.
+    (ال التعريف ما تفرّق: «العلماء» = «علماء»)"""
+    words = re.sub(r"[\W_]+", " ", norm(text)).split()
+    words = [w[2:] if w.startswith("ال") and len(w) > 3 else w for w in words]
+    return " " + " ".join(words) + " "
 
 
 def resolve_store(store, cfg):
@@ -315,16 +318,16 @@ REPORT_ROWS = [
     ("شي براند",       "متفرقة كولدن",  "شي براند"),
     ("سونامي",         "متفرقة كولدن",  "سونامي"),
     ("سوز",            "متفرقة كولدن",  "سوز"),
-    ("زيزفونة",        "متفرقة كولدن",  "زيزفونة"),
+    ("زيزفونة",        "متفرقة كولدن",  "زيزفونه"),
     ("تبارك",          "خارجية متفرقة", "تبارك"),
-    ("المؤمنين",         "خارجية متفرقة", "المؤمنين"),
-    ("العلماء",          "خارجية متفرقة", "العلماء"),
-    ("المنهجية",         "خارجية متفرقة", "المنهجية"),
+    ("المؤمنين",       "خارجية متفرقة", "المؤمنين"),
+    ("العلماء",        "خارجية متفرقة", "العلماء"),
+    ("المنهجية",       "خارجية متفرقة", "المنهجية"),
     ("كنوز",           "خارجية متفرقة", "كنوز"),
     ("عبد",            "خارجية متفرقة", "عبد الرحمن"),
     ("كبيسي",          "خارجية متفرقة", "الكبيسي"),
-    ("ابن الاثير",           "خارجية متفرقة", "ابن الاثير"),
-    ("الحرمين",          "خارجية متفرقة", "الحرمين"),
+    ("ابن الأثير",     "خارجية متفرقة", "ابن الأثير"),
+    ("الحرمين",        "خارجية متفرقة", "الحرمين"),
     ("كاريزا",         "متفرقة كولدن",  "أزياء كاريزا"),
     ("مازن",           "متفرقة كولدن",  "مازن"),
     ("طوق",            "خارجية متفرقة", "طوق الحمامة"),
@@ -531,19 +534,21 @@ def show_df(df):
 
 
 def load_orders(files):
-    orders, seen = [], set()
-    for f in files:
+    orders, first = [], {}
+    for idx, f in enumerate(files):
         try:
             found, declared = parse_pdf(f.getvalue())
         except Exception as e:  # noqa: BLE001
             st.error(f"ما كدرت أقرأ الملف «{f.name}»: {e}")
             continue
-        dup = 0
+        dups = []
         for o in found:
-            if o["ship"] and o["ship"] in seen:
-                dup += 1
+            ship = o["ship"]
+            if ship and ship in first:  # نفس رقم الشحنة انحسب قبل
+                dups.append((ship, first[ship]))
                 continue
-            seen.add(o["ship"])
+            if ship:
+                first[ship] = (idx, f.name)
             orders.append(o)
         if declared is not None and declared != len(found):
             st.warning(f"⚠️ «{f.name}»: الكشف مكتوب بيه {declared} شحنة بس انقرأ {len(found)} — "
@@ -552,8 +557,12 @@ def load_orders(files):
             st.caption(f"✅ «{f.name}»: {len(found)} طلب (مطابق لعدد الشحنات بالكشف)")
         else:
             st.caption(f"📄 «{f.name}»: {len(found)} طلب")
-        if dup:
-            st.warning(f"⚠️ {dup} طلب مكرر بين الملفات انتجاهل (انحسب مرة وحدة).")
+        if dups:
+            parts = [f"{ship} (أصله بـ " + ("نفس الملف" if i == idx else f"«{name}»") + ")"
+                     for ship, (i, name) in dups[:5]]
+            more = f" … و{len(dups) - 5} غيرها" if len(dups) > 5 else ""
+            st.warning(f"⚠️ {len(dups)} طلب مكرر (نفس رقم الشحنة) بـ «{f.name}» انتجاهل وانحسب مرة وحدة: "
+                       + " ، ".join(parts) + more)
     return orders
 
 
@@ -659,13 +668,18 @@ def show_list2(name):
 def collect_report(uploads):
     """يرجّع (صافي كل سطر بالجدول ، الباقي اللي ما إله سطر بالجدول)."""
     wanted = {(inp, norm(key) if key else None) for _, inp, key in REPORT_ROWS}
-    nets, extra = {}, []
+    nets, extra, seen_in, cross = {}, [], {}, []
     for inp, files in uploads.items():
         if not files:
             continue
         orders = load_orders(files)
         if not orders:
             continue
+        for o in orders:  # نفس رقم الشحنة بخانتين مختلفتين؟
+            if o["ship"]:
+                other = seen_in.setdefault(o["ship"], inp)
+                if other != inp:
+                    cross.append((o["ship"], other, inp))
         if inp in LIST1:
             warn_foreign(orders, inp)
             net = calc_list1(orders, LIST1[inp])[2]
@@ -682,6 +696,10 @@ def collect_report(uploads):
                 if not g["known"] and cfg.get("warn_others"):
                     why += " ⚠️ مو مذكور بالقواعد"
                 extra.append((inp, g["name"], g["n"], net, why))
+    if cross:
+        more = f" … و{len(cross) - 5} غيرها" if len(cross) > 5 else ""
+        st.warning("⚠️ نفس رقم الشحنة موجود بكشفين مختلفين وانحسب بالاثنين — راجع: "
+                   + " ، ".join(f"{ship} («{x}» و«{y}»)" for ship, x, y in cross[:5]) + more)
     return nets, extra
 
 
